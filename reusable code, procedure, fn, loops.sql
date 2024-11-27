@@ -1,188 +1,86 @@
-use mydb;
-
-SELECT
-    o.id AS order_id,
-    o.date,
-    od.quantity,
-    p.name AS product_name,
-    p.unit,
-    p.price,
-    (SELECT AVG(price) FROM products WHERE id = od.product_id GROUP BY id) AS average_product_price
-FROM
-    orders o
-JOIN
-    order_details od ON o.id = od.order_id
-JOIN
-    products p ON od.product_id = p.id;
-
+-- p1 
 SELECT 
-   o.id AS order_id, 
-   COUNT(od.id) AS total_products, 
-   SUM(p.price * od.quantity) AS total_order_cost 
+	order_id, 
+	product_id, 
+	quantity, 
+(SELECT customer_id FROM orders WHERE id = od.order_id) AS customer_id
 FROM 
-   orders o 
-JOIN 
-   order_details od ON o.id = od.order_id 
-JOIN 
-   products p ON od.product_id = p.id 
+    order_details od;
+    
+-- p2
+SELECT 
+	order_id, 
+	product_id, 
+	quantity
+FROM 
+    order_details od
 WHERE 
-   od.quantity = (SELECT MAX(quantity) FROM order_details) 
-GROUP BY 
-   o.id;
-   
-SELECT order_id, quantity, product_id
-FROM order_details
-WHERE (quantity, product_id) IN (SELECT quantity, product_id FROM order_details WHERE quantity > 5);
-
-SELECT
-    category_id,
-    AVG(price) AS avg_price
-FROM
-    (SELECT * FROM products WHERE category_id IN (2,3)) AS temp_table
-GROUP BY
-    category_id;
+    od.order_id IN (
+        SELECT id 
+        FROM orders 
+        WHERE shipper_id = 3
+    );
     
-WITH OrderDetailsWithProductInfo AS (
-    SELECT
-        o.id AS order_id,
-        o.customer_id,
-        o.date,
-        od.product_id,
-        p.name AS product_name,
-        p.price,
-        od.quantity,
-        (p.price * od.quantity) AS total_cost
-    FROM
-        orders o
-    JOIN
-        order_details od ON o.id = od.order_id
-    JOIN
-        products p ON od.product_id = p.id
+-- p3
+SELECT order_id, AVG(quantity) AS avg_quantity
+FROM (SELECT * FROM order_details WHERE quantity > 10) AS temp_table
+GROUP BY order_id;
+
+ -- p4
+ WITH TemporalTable AS (
+    SELECT *
+    FROM order_details
+    WHERE quantity > 10
 )
-SELECT
-    order_id,
-    customer_id,
-    date,
-    product_id,
-    product_name,
-    quantity,
-    price,
-    total_cost
-FROM
-    OrderDetailsWithProductInfo
-WHERE
-    customer_id > 50;
-    
-INSERT INTO orders (id, customer_id, employee_id, date, shipper_id)
-SELECT id,
-		34 as customer_id,  
-		4 as employee_id,
-		NOW() as date, 
-		1 as shipper_id
-	FROM customers WHERE name LIKE 'Bo%'
-    LIMIT 2;
-SELECT * from orders order by date desc LIMIT 2; 
+SELECT order_id, AVG(quantity) AS avg_quantity
+FROM TemporalTable
+GROUP BY order_id;
 
-DELIMITER //
-CREATE FUNCTION CalculateSquare (num INT)
-RETURNS INT
+-- p5
+DROP FUNCTION IF EXISTS divide_fn;
+
+DELIMITER // 
+CREATE FUNCTION divide_fn(quantity FLOAT, num FLOAT)
+RETURNS FLOAT
 DETERMINISTIC 
-NO SQL
 BEGIN
-DECLARE result int;
-SET result = num * num;
-RETURN result;
+	DECLARE result INT;
+    IF num = 0 THEN
+		RETURN NULL;
+    END IF;
+	SET result = quantity / num;
+	RETURN result;
 END //
 
 DELIMITER ;
-
-SELECT CalculateSquare(3);
-
-DROP FUNCTION IF EXISTS CalculateSquare;
-
-DELIMITER //
-CREATE PROCEDURE GetEmployeeDetails(id INT)
-BEGIN
-SELECT * FROM employees WHERE employee_id = id;
-END //
-DELIMITER ;
-
-CALL GetEmployeeDetails(3);
-
-DROP PROCEDURE IF EXISTS GetOrderDetails;
+DROP PROCEDURE IF EXISTS for_all_orders;
 
 DELIMITER //
 
-CREATE PROCEDURE GetOrderDetails(IN order_id_param INT)
+CREATE PROCEDURE for_all_orders()
+DETERMINISTIC
 READS SQL DATA
 BEGIN
-    DECLARE product_name VARCHAR(255) DEFAULT 'Not found!';
-    DECLARE order_quantity INT DEFAULT 0;
+    DECLARE count INT DEFAULT 0;
+    DECLARE order_quantity FLOAT;
+    DECLARE total INT;
 
-    SELECT p.name, od.quantity INTO product_name, order_quantity
-    FROM order_details od
-    JOIN products p ON od.product_id = p.id
-    WHERE od.order_id = order_id_param
-    LIMIT 1;
+    SET total = (SELECT COUNT(*) FROM order_details);
 
-    -- Вивести результат
-    SELECT 'Product Name:', product_name, 'Order Quantity:', order_quantity;
+    WHILE count < total DO
+        SELECT quantity INTO order_quantity
+        FROM order_details
+        LIMIT 1 OFFSET count;
+
+        SELECT divide_fn(order_quantity, count + 1) AS result;
+
+        SET count = count + 1;
+    END WHILE;
 END //
 
 DELIMITER ;
 
-CALL GetOrderDetails(10249);
-
-CALL GetOrderDetails(1);
-
-DELIMITER //
-CREATE PROCEDURE example_while()
-DETERMINISTIC
-NO SQL
-BEGIN
-	DECLARE counter INT DEFAULT 0;
-	WHILE counter < 10 DO
-		SELECT counter;
-		SET counter = counter + 1;
-	END WHILE;
-END //
-DELIMITER ;
-
-call example_while();
-
-DELIMITER //
-CREATE PROCEDURE example_repeat()
-DETERMINISTIC
-BEGIN
-  DECLARE counter INT DEFAULT 0;
-	REPEAT
-		SELECT counter;
-		SET counter = counter + 1;
-	UNTIL counter > 10
-	END REPEAT;
-END //
-DELIMITER ;
-
-call example_repeat();
-
-DELIMITER //
-CREATE PROCEDURE example_loop()
-DETERMINISTIC
-BEGIN
-    DECLARE counter INT DEFAULT 0;
-    simple_loop: LOOP
-        SELECT counter;
-        SET counter = counter + 1;
-        IF counter >= 5 THEN
-            LEAVE simple_loop;
-        END IF;
-    END LOOP simple_loop;
-END //
-
-DELIMITER ;
-
-CALL example_loop();
-
+call for_all_orders();
 
 
 
